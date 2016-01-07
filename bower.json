@@ -1,0 +1,11 @@
+{
+  "name": "mapsnat",
+  "description": "maps and all of that",
+  "devDependencies": {},
+  "dependencies": {
+    "react": "~0.14.3",
+    "react-bootstrap": "~0.28.1",
+    "jquery": "~2.1.4",
+    "bootstrap": "~3.3.6"
+  }
+}
