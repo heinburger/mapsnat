@@ -46,6 +46,7 @@ var Map = React.createClass({
         <img style={{maxWidth:'100%'}} src={this.state.map.image} />
         <hr />
         <a href={this.state.map.highRes}>download high resolution image</a>
+        <hr />
       </div>
     )
   },
