@@ -42,7 +42,11 @@ var Map = React.createClass({
   },
   render: function() {
     return (
-      <img style={{maxWidth:'100%'}} src={this.state.map.image} />
+      <div>
+        <img style={{maxWidth:'100%'}} src={this.state.map.image} />
+        <hr />
+        <a href={this.state.map.highRes}>download high resolution image</a>
+      </div>
     )
   },
   componentWillReceiveProps: function(prop) {
