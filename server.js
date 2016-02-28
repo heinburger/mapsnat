@@ -17,7 +17,7 @@ var mapPageNumber=100;
 
 var app = express();
 
-app.use(express.static(__dirname));
+app.use(express.static(__dirname+'/www'));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
