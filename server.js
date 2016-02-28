@@ -13,7 +13,7 @@ var config = require(__dirname + '/config.js');
 var token = "4owjcjvs7pjha8ln";
 var auth = "Token token=" + token;
 // at page 4 in db
-var mapPageNumber=1;
+var mapPageNumber=100;
 
 var app = express();
 
@@ -27,7 +27,7 @@ var connection = null;
 function getDbConn() {
   var connectionPromise = q.defer();
   r.connect( {host: 'localhost', port: 28015}, function(err, conn) {
-      if (err) throw err;
+      if (err) console.log(err);
       connection = conn;
       connectionPromise.resolve();
   });
@@ -54,6 +54,9 @@ app.route('/getMoreMaps')
 app.route('/maps')
   .get(getMapsFromDb)
 
+app.route('/maps/:id')
+  .get(getMapsFromDb)
+
 function getMaps(req, res, next) {
   var url = "http://api.repo.nypl.org/api/v1/items/search.json?q=maps&publicDomainOnly=true&page="+mapPageNumber;
   var selfRes = res;
@@ -65,6 +68,7 @@ function getMaps(req, res, next) {
       }
     },
     function (error, response, body) {
+      if(error) { console.log(error); }
       var jsonBody = JSON.parse(body);
       var counter = 0;
       var promises = [];
@@ -119,34 +123,17 @@ function getImageLinks(url) {
 }
 
 function getMapsFromDb(req, res, next) {
+  console.log('getting maps')
   var selfRes = res;
-  r.table('maps').run(connection, function(err, cursor) {
-    if (err) throw err;
+  var mapNum;
+  if (!req.params.id) { mapNum = 1 } else { mapNum = parseInt(req.params.id) }
+  r.table('maps').slice(mapNum,mapNum+1).run(connection, function(err, cursor) {
+    if (err) console.log(err);
     cursor.toArray(function(err, result) {
         selfRes.send(JSON.stringify(result))
     });
 });
 }
-
-
-
-// //get a few random maps on startup
-// var someMaps;
-// var url = "http://api.repo.nypl.org/api/v1/items/search.json?q=maps&publicDomainOnly=true&page="+1;
-// var auth = "Token token=" + token;
-// request(
-//   {
-//     url: url,
-//     headers: {
-//       "Authorization" : auth
-//     }
-//   },
-//   function (error, response, body) {
-//     var temp = JSON.parse(body);
-//     someMaps = temp.nyplAPI.response.result;
-//   }
-// );
-
 
 
 
