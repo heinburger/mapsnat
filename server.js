@@ -1,29 +1,61 @@
 var express = require('express');
 var bodyParser = require('body-parser');
 var cookieParser = require('cookie-parser');
-var moment = require('moment')
+var moment = require('moment');
 var http = require('http');
 var request = require('request');
-var Oauth = require('oauth');
-var parser = require('xml2json');
-var freebase = require('freebase');
-var glossary = require('glossary');
 var q = require('q')
+var r = require('rethinkdb')
+var _ = require('underscore')
 
 var config = require(__dirname + '/config.js');
+//token stuff for NYPL
+var token = "4owjcjvs7pjha8ln";
+var auth = "Token token=" + token;
+// at page 4 in db
+var mapPageNumber=1;
 
 var app = express();
-//For serving the index.html and all the other front-end assets.
-app.use(express.static(__dirname));
 
+app.use(express.static(__dirname));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
-//The REST routes for maps by page
-app.route('/maps/:pageId').get(function (req, res) {
-  var token = "PUT THE F'n TOKEN HERE, DAMN";
-  var url = "http://api.repo.nypl.org/api/v1/items/search.xml?q=maps&publicDomainOnly=true&page="+req.params.pageId;
-  var auth = "Token token=" + token;
+// rethink
+var connection = null;
+
+function getDbConn() {
+  var connectionPromise = q.defer();
+  r.connect( {host: 'localhost', port: 28015}, function(err, conn) {
+      if (err) throw err;
+      connection = conn;
+      connectionPromise.resolve();
+  });
+  return connectionPromise.promise;
+}
+
+// get connection and then make table
+getDbConn().then(function() {
+  r.tableList().contains('maps').do(function(containsTable) {
+    return r.branch(
+      containsTable,
+      {created: 0},
+      r.tableCreate('maps')
+    );
+  }).run(connection, function(err) {
+    //so something on error
+  });
+});
+
+// routes
+app.route('/getMoreMaps')
+  .get(getMaps)
+
+app.route('/maps')
+  .get(getMapsFromDb)
+
+function getMaps(req, res, next) {
+  var url = "http://api.repo.nypl.org/api/v1/items/search.json?q=maps&publicDomainOnly=true&page="+mapPageNumber;
   var selfRes = res;
   request(
     {
@@ -33,41 +65,93 @@ app.route('/maps/:pageId').get(function (req, res) {
       }
     },
     function (error, response, body) {
-      var fullRes = parser.toJson(body)
-      selfRes.send(fullRes);
+      var jsonBody = JSON.parse(body);
+      var counter = 0;
+      var promises = [];
+
+      _.each(jsonBody.nyplAPI.response.result, function (result) {
+        var apiURL = result.apiItemURL
+        var checkDb = q.defer();
+        promises.push(checkDb.promise);
+        r.table('maps').filter({url:apiURL}).run(connection, function(err, cursor) {
+          if (err) throw err;
+          cursor.toArray(function(err, result) {
+            if (err) { throw err; }
+            if (!result.length) {
+              getImageLinks(apiURL);
+              counter++;
+            }
+            checkDb.resolve();
+          });
+        });
+      });
+
+      mapPageNumber++;
+
+      q.all(promises).then(function() {
+        selfRes.send({number:counter})
+      });
     }
   );
+}
+
+function getImageLinks(url) {
+  request(
+    {
+      url : url,
+      headers : {
+        "Authorization" : auth
+      }
+    },
+    function (error, response, body) {
+      var jsonBody = JSON.parse(body);
+      var highRes, image, imageDownload;
+        
+      imageDownload = jsonBody.nyplAPI.response.capture[0].imageLinks.imageLink[0];
+      image = imageDownload.replace('&download=1','');
+      highRes = jsonBody.nyplAPI.response.capture[0].highResLink;
+
+      r.table('maps').insert({url:url, image:image, imageDownload:imageDownload, highRes:highRes}).run(connection, function(err, result) {
+        if (err) throw err;
+      });
+    }
+  );
+}
+
+function getMapsFromDb(req, res, next) {
+  var selfRes = res;
+  r.table('maps').run(connection, function(err, cursor) {
+    if (err) throw err;
+    cursor.toArray(function(err, result) {
+        selfRes.send(JSON.stringify(result))
+    });
 });
-
-
-
-//If we reach this middleware the route could not be handled and must be unknown.
-app.use(handle404);
-
-//Generic error handling middleware.
-app.use(handleError);
-
-//Page-not-found middleware.
-function handle404(req, res, next) {
-  res.status(404).end('not found');
-}
-
-//generic error handling middleware.
-function handleError(err, req, res, next) {
-  console.error(err.stack); 
-  //send back a 500 page and log the error to the console.
-  res.status(500).json({err: err.message});
 }
 
 
-//store the db connection and start listening on a port.
-function startExpress() {
-  app.listen(config.express.port);
-  console.log('Listening on port ' + config.express.port);
-}
 
-//start it up
-startExpress();
+// //get a few random maps on startup
+// var someMaps;
+// var url = "http://api.repo.nypl.org/api/v1/items/search.json?q=maps&publicDomainOnly=true&page="+1;
+// var auth = "Token token=" + token;
+// request(
+//   {
+//     url: url,
+//     headers: {
+//       "Authorization" : auth
+//     }
+//   },
+//   function (error, response, body) {
+//     var temp = JSON.parse(body);
+//     someMaps = temp.nyplAPI.response.result;
+//   }
+// );
+
+
+
+
+app.listen(config.express.port);
+console.log('Listening on port ' + config.express.port);
 
 
 
